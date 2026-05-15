@@ -98,60 +98,38 @@ def load_model():
     else:
         model_dir = Path("models")  # fallback
     try:
-        with open(model_dir / "model_F_RF.pkl",   "rb") as f: model        = pickle.load(f)
-        with open(model_dir / "scaler_radio.pkl",  "rb") as f: scaler_radio = pickle.load(f)
-        with open(model_dir / "scaler_dvh.pkl",    "rb") as f: scaler_dvh   = pickle.load(f)
-        with open(model_dir / "features_F.json",   "r")  as f: features_f   = json.load(f)
+        import joblib
+        model    = joblib.load(model_dir / "model_F_RF.pkl")
+        scaler   = joblib.load(model_dir / "scaler_combined.pkl")
+        with open(model_dir / "features_F.json", "r") as f:
+            features_f = json.load(f)
         thresh = THRESHOLD
         thresh_path = model_dir / "threshold_F.json"
         if thresh_path.exists():
             with open(thresh_path, "r") as f:
                 thresh = json.load(f).get("threshold", THRESHOLD)
-        return model, scaler_radio, scaler_dvh, features_f, thresh, None
-    except FileNotFoundError as e:
-        return None, None, None, None, THRESHOLD, str(e)
+        return model, scaler, features_f, thresh, None
+    except Exception as e:
+        return None, None, None, THRESHOLD, str(e)
 
 # ─────────────────────────────────────────────────────────────
 # Prediction
 # ─────────────────────────────────────────────────────────────
-def scale_features(scaler_radio, scaler_dvh, feature_values, features_f):
-    """Scale DVH and radiomics features separately, then concat in correct order."""
-    dvh_keys   = [f["key"] for f in DVH_FEATURES]
-    radio_keys = [f["key"] for f in RADIO_FEATURES]
-    dvh_cols   = [k for k in features_f if k in dvh_keys]
-    radio_cols = [k for k in features_f if k in radio_keys]
-
-    scaled = {}
-    if dvh_cols and scaler_dvh:
-        x_dvh = np.array([[feature_values[k] for k in dvh_cols]])
-        xs    = scaler_dvh.transform(x_dvh)[0]
-        for k, v in zip(dvh_cols, xs): scaled[k] = v
-    if radio_cols and scaler_radio:
-        x_r = np.array([[feature_values[k] for k in radio_cols]])
-        xs  = scaler_radio.transform(x_r)[0]
-        for k, v in zip(radio_cols, xs): scaled[k] = v
-
-    return np.array([[scaled.get(k, feature_values.get(k, 0)) for k in features_f]])
-
-
-def predict(model, scaler_radio, scaler_dvh, features_f, threshold, feature_values):
-    x_scaled = scale_features(scaler_radio, scaler_dvh, feature_values, features_f)
+def predict(model, scaler, features_f, threshold, feature_values):
+    x = np.array([[feature_values[k] for k in features_f]])
+    x_scaled = scaler.transform(x)
     prob = float(model.predict_proba(x_scaled)[0, 1])
     decision = "Responder" if prob >= threshold else "Non-responder"
     return prob, decision
 
 
-def predict_batch(model, scaler_radio, scaler_dvh, features_f, threshold, df):
+def predict_batch(model, scaler, features_f, threshold, df):
     missing = [k for k in features_f if k not in df.columns]
     if missing:
         return None, missing
-    rows = []
-    for _, row in df.iterrows():
-        fv = row.to_dict()
-        x  = scale_features(scaler_radio, scaler_dvh, fv, features_f)
-        p  = float(model.predict_proba(x)[0, 1])
-        rows.append(p)
-    probs = np.array(rows)
+    X = df[features_f].values.astype(float)
+    X_scaled = scaler.transform(X)
+    probs = model.predict_proba(X_scaled)[:, 1]
     decisions = ["Responder" if p >= threshold else "Non-responder" for p in probs]
     out = df.copy()
     out["Predicted_probability"] = probs.round(4)
@@ -171,12 +149,11 @@ st.markdown(
 )
 st.divider()
 
-model, scaler_radio, scaler_dvh, features_f, threshold, load_err = load_model()
+model, scaler, features_f, threshold, load_err = load_model()
 if load_err:
     st.warning(
-        f"⚠️ Model files not found ({load_err}). "
-        "Please upload `model_F_RF.pkl` and `scaler_F.pkl` to the `models/` folder. "
-        "Predictions are disabled until model files are loaded."
+        f"⚠️ Model files not found: {load_err}. "
+        "Please upload model files to the `models/` folder."
     )
     model_ready = False
 else:
@@ -230,7 +207,7 @@ with tab_manual:
                  type="primary", use_container_width=True,
                  disabled=not model_ready):
         all_vals = {**dvh_vals, **radio_vals}
-        prob, decision = predict(model, scaler_radio, scaler_dvh, features_f, threshold, all_vals)
+        prob, decision = predict(model, scaler, features_f, threshold, all_vals)
         pct = prob * 100
 
         col1, col2, col3 = st.columns(3)
@@ -289,7 +266,7 @@ with tab_batch:
             if st.button("▶ Run batch prediction",
                          type="primary", use_container_width=True,
                          disabled=not model_ready):
-                df_out, missing = predict_batch(model, scaler_radio, scaler_dvh, features_f, threshold, df_in)
+                df_out, missing = predict_batch(model, scaler, features_f, threshold, df_in)
                 if missing:
                     st.error(f"Missing columns: {missing}")
                 else:
