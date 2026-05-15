@@ -88,7 +88,15 @@ def load_model():
       models/features_F.json    — feature name list (ordered)
       models/threshold_F.json   — Youden threshold
     """
-    model_dir = Path("models")
+    # 自动查找models目录（兼容不同部署路径）
+    for candidate in [Path("models"),
+                      Path("sirt-calculator/models"),
+                      Path(__file__).parent / "models"]:
+        if candidate.exists():
+            model_dir = candidate
+            break
+    else:
+        model_dir = Path("models")  # fallback
     try:
         with open(model_dir / "model_F_RF.pkl",   "rb") as f: model        = pickle.load(f)
         with open(model_dir / "scaler_radio.pkl",  "rb") as f: scaler_radio = pickle.load(f)
@@ -204,7 +212,7 @@ with tab_manual:
     )
 
     radio_vals = {}
-    for feat in RADIO_FEATURES:
+    for i, feat in enumerate(RADIO_FEATURES):
         radio_vals[feat["key"]] = st.number_input(
             feat["label"],
             min_value=float(feat["min"]),
@@ -213,7 +221,7 @@ with tab_manual:
             step=0.001,
             format="%.4f",
             help=feat["help"],
-            key="radio_" + feat["key"][:20],
+            key=f"radio_{i}",
         )
 
     st.divider()
