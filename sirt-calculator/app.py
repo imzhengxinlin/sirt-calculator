@@ -111,11 +111,8 @@ def load_model():
         with open(model_dir / "features_F.json", "r") as f:
             features_f = json.load(f)
 
+        # threshold는 항상 하드코딩된 THRESHOLD 사용 (JSON 무시)
         thresh = THRESHOLD
-        thresh_path = model_dir / "threshold_F.json"
-        if thresh_path.exists():
-            with open(thresh_path, "r") as f:
-                thresh = json.load(f).get("threshold", THRESHOLD)
 
         return sess, scaler_params, features_f, thresh, None
     except Exception as e:
