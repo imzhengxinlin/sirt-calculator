@@ -248,7 +248,7 @@ with tab_manual:
         col1, col2, col3 = st.columns(3)
         col1.metric("Probability", f"{pct:.1f}%")
         col2.metric("Threshold",   f"{THRESHOLD*100:.0f}%")
-        col3.metric("Decision",    decision)
+        col3.metric("Decision", "Responder" if decision=="Responder" else "Non-resp.")
 
         if decision == "Responder":
             st.success(
