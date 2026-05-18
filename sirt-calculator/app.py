@@ -34,6 +34,9 @@ DVH_FEATURES = [
     {"key": "nCI",          "label": "nCI — Normalized coverage index",            "min": 0.0,  "max": 100000000.0,"default": 2002440.0,   "help": "nCI value from DVH"},
 ]
 
+# DVH-only特征（与DVH_FEATURES相同，单独定义方便管理）
+DVH_FEATURES_A = DVH_FEATURES  # 7个DVH参数完全相同
+
 RADIO_FEATURES = [
     {"key": "delayed__original__shape__Elongation",
      "label": "Equilibrium · Original · Shape · Elongation",
@@ -72,7 +75,8 @@ RADIO_FEATURES = [
 ALL_FEATURE_KEYS = [f["key"] for f in DVH_FEATURES] + \
                    [f["key"] for f in RADIO_FEATURES]
 
-THRESHOLD = 0.5233  # Youden index threshold from training set
+THRESHOLD   = 0.5233  # Model F: Radiomics+DVH RF threshold
+THRESHOLD_A = 0.3394  # Model A: DVH only XGB threshold
 
 # ─────────────────────────────────────────────────────────────
 # Load model (cached)
@@ -121,42 +125,62 @@ def load_model():
 # ─────────────────────────────────────────────────────────────
 # Prediction
 # ─────────────────────────────────────────────────────────────
-def onnx_predict_proba(sess, X_scaled):
-    inp_name = sess.get_inputs()[0].name
-    res = sess.run(["probabilities"],
-                   {inp_name: X_scaled.astype(np.float32)})[0]
-    return res[:, 1]
-
-
 def scale_X(scaler_params, X):
-    """Z-score standardize without sklearn."""
     mean  = np.array(scaler_params["mean_"])
     scale = np.array(scaler_params["scale_"])
     return (X - mean) / scale
 
 
-def predict(model, scaler_params, features_f, threshold, feature_values):
+def predict_F(sess, scaler_params, features_f, threshold, feature_values):
+    """Model F: ONNX RF"""
     missing = [k for k in features_f if k not in feature_values]
     if missing:
         raise KeyError(f"Missing features: {missing}")
     x = np.array([[feature_values[k] for k in features_f]])
     x_scaled = scale_X(scaler_params, x)
-    prob = float(onnx_predict_proba(model, x_scaled)[0])
-    decision = "Responder" if prob >= threshold else "Non-responder"
-    return prob, decision
+    inp  = sess.get_inputs()[0].name
+    prob = float(sess.run(["probabilities"],
+                          {inp: x_scaled.astype(np.float32)})[0][0, 1])
+    return prob, "Responder" if prob >= threshold else "Non-responder"
 
 
-def predict_batch(model, scaler_params, features_f, threshold, df):
-    missing = [k for k in features_f if k not in df.columns]
+def predict_A(booster, scaler_params, features_f, threshold, feature_values):
+    """Model A: XGBoost Booster JSON"""
+    import xgboost as xgb
+    missing = [k for k in features_f if k not in feature_values]
     if missing:
-        return None, missing
-    X = df[features_f].values.astype(float)
-    X_scaled = scale_X(scaler_params, X)
-    probs = onnx_predict_proba(model, X_scaled)
-    decisions = ["Responder" if p >= threshold else "Non-responder" for p in probs]
-    out = df.copy()
+        raise KeyError(f"Missing features: {missing}")
+    x = np.array([[feature_values[k] for k in features_f]])
+    x_scaled = scale_X(scaler_params, x)
+    dmat = xgb.DMatrix(x_scaled, feature_names=features_f)
+    prob = float(booster.predict(dmat)[0])
+    return prob, "Responder" if prob >= threshold else "Non-responder"
+
+
+def predict_batch_F(sess, scaler_params, features_f, threshold, df):
+    missing = [k for k in features_f if k not in df.columns]
+    if missing: return None, missing
+    X = scale_X(scaler_params, df[features_f].values.astype(float))
+    inp   = sess.get_inputs()[0].name
+    probs = sess.run(["probabilities"], {inp: X.astype(np.float32)})[0][:, 1]
+    out   = df.copy()
     out["Predicted_probability"] = probs.round(4)
-    out["Predicted_decision"]    = decisions
+    out["Predicted_decision"] = ["Responder" if p >= threshold else "Non-responder"
+                                  for p in probs]
+    return out, []
+
+
+def predict_batch_A(booster, scaler_params, features_f, threshold, df):
+    import xgboost as xgb
+    missing = [k for k in features_f if k not in df.columns]
+    if missing: return None, missing
+    X = scale_X(scaler_params, df[features_f].values.astype(float))
+    dmat  = xgb.DMatrix(X, feature_names=features_f)
+    probs = booster.predict(dmat)
+    out   = df.copy()
+    out["Predicted_probability"] = probs.round(4)
+    out["Predicted_decision"] = ["Responder" if p >= threshold else "Non-responder"
+                                  for p in probs]
     return out, []
 
 # ─────────────────────────────────────────────────────────────
