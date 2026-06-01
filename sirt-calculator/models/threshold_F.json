@@ -1,5 +1,0 @@
-{
-  "threshold": 0.5110306779010635,
-  "algorithm": "RF",
-  "feature_set": "F_radiomics_dvh"
-}
