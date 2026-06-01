@@ -1,0 +1,6 @@
+{
+  "threshold": 0.6462266019500565,
+  "algorithm": "LR",
+  "feature_set": "A_dvh",
+  "val_auc": 0.8619
+}
