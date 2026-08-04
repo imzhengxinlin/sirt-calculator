@@ -11,17 +11,25 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
 
     steps:
       - name: Visit Streamlit app
+        shell: bash
         run: |
+          COOKIE_JAR="$(mktemp)"
+
           curl \
             --fail \
             --silent \
             --show-error \
             --location \
-            --max-time 60 \
-            --retry 3 \
+            --max-redirs 10 \
+            --cookie "$COOKIE_JAR" \
+            --cookie-jar "$COOKIE_JAR" \
+            --user-agent "Mozilla/5.0 (GitHub Actions Streamlit keep-alive)" \
+            --connect-timeout 20 \
+            --max-time 90 \
+            --write-out "HTTP %{http_code} | %{url_effective}\n" \
             "https://sirt-calculator.streamlit.app/" \
             --output /dev/null
