@@ -1,0 +1,27 @@
+name: Keep Streamlit App Awake
+
+on:
+  schedule:
+    # 每6小时运行一次，使用UTC时间
+    - cron: "17 */6 * * *"
+
+  # 允许在Actions页面手动测试
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Visit Streamlit app
+        run: |
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 60 \
+            --retry 3 \
+            "https://sirt-calculator.streamlit.app/" \
+            --output /dev/null
