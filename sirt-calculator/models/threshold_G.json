@@ -1,6 +1,0 @@
-{
-  "threshold": 0.5119370535610965,
-  "algorithm": "RF",
-  "feature_set": "G_combined",
-  "val_auc": 0.8657
-}
